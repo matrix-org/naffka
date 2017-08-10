@@ -157,12 +157,15 @@ func (n *Naffka) Close() error {
 	return nil
 }
 
-const blockSize = 1024
+const channelSize = 1024
 
 type partitionConsumer struct {
 	topic    *topic
 	messages chan *sarama.ConsumerMessage
-	ready    bool
+	// Whether the consumer is ready for new messages or whether it
+	// is catching up on historic messages.
+	// Reads and writes to this field are proctected by the topic mutex.
+	ready bool
 }
 
 // AsyncClose implements sarama.PartitionConsumer
@@ -171,6 +174,7 @@ func (c *partitionConsumer) AsyncClose() {
 
 // Close implements sarama.PartitionConsumer
 func (c *partitionConsumer) Close() error {
+	// TODO: Add support for performing a clean shutdown of the consumer.
 	return nil
 }
 
@@ -181,6 +185,7 @@ func (c *partitionConsumer) Messages() <-chan *sarama.ConsumerMessage {
 
 // Errors implements sarama.PartitionConsumer
 func (c *partitionConsumer) Errors() <-chan *sarama.ConsumerError {
+	// TODO: Add option to pass consumer errors to an errors channel.
 	return nil
 }
 
@@ -189,29 +194,41 @@ func (c *partitionConsumer) HighWaterMarkOffset() int64 {
 	return c.topic.highwaterMark()
 }
 
+// block writes the message to the consumer blocking until the consumer is ready
+// to add the message to the channel. Once the message is successfully added to
+// the channel it will catch up by pulling historic messsages from the database.
 func (c *partitionConsumer) block(cmsg *sarama.ConsumerMessage) {
 	c.messages <- cmsg
 	c.catchup(cmsg.Offset)
 }
 
+// catchup reads historic messages from the database until the consumer has caught
+// up on all the historic messages.
 func (c *partitionConsumer) catchup(fromOffset int64) {
 	for {
+		// First check if we have caught up.
 		caughtUp, nextOffset := c.topic.hasCaughtUp(c, fromOffset)
 		if caughtUp {
 			return
 		}
-		if nextOffset > fromOffset+blockSize {
-			nextOffset = fromOffset + blockSize
+		// Limit the number of messages we request from the database to be the
+		// capacity of the channel.
+		if nextOffset > fromOffset+int64(cap(c.messages)) {
+			nextOffset = fromOffset + int64(cap(c.messages))
 		}
-
+		// Fetch the messages from the database.
 		msgs, err := c.topic.db.FetchMessages(c.topic.topicName, fromOffset, nextOffset)
 		if err != nil {
-			// TODO: Error handling.
+			// TODO: Add option to write consumer errors to an errors channel
+			// as an alternative to logging the errors.
 			log.Print("Error: reading messages", err)
 		}
+		// Pass the messages into the consumer channel.
+		// Blocking each write until the channel has enough space for the message.
 		for i := range msgs {
 			c.messages <- msgs[i].consumerMessage()
 		}
+		// Update our the offset for the next loop iteration.
 		fromOffset = msgs[len(msgs)-1].Offset
 	}
 }
@@ -226,6 +243,7 @@ type topic struct {
 
 func (t *topic) send(now time.Time, pmsgs []*sarama.ProducerMessage) error {
 	var err error
+	// Encode the message keys and values.
 	msgs := make([]Message, len(pmsgs))
 	for i := range msgs {
 		msgs[i].Topic = pmsgs[i].Topic
@@ -244,6 +262,7 @@ func (t *topic) send(now time.Time, pmsgs []*sarama.ProducerMessage) error {
 		pmsgs[i].Timestamp = now
 		msgs[i].Timestamp = now
 	}
+	// Take the lock before assigning the offsets.
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	offset := t.nextOffset
@@ -252,12 +271,14 @@ func (t *topic) send(now time.Time, pmsgs []*sarama.ProducerMessage) error {
 		msgs[i].Offset = offset
 		offset++
 	}
+	// Store the messages while we hold the lock.
 	err = t.db.StoreMessages(msgs)
 	if err != nil {
 		return err
 	}
 	t.nextOffset = offset
 
+	// Now notify the consumers about the messages.
 	for i := range msgs {
 		cmsg := msgs[i].consumerMessage()
 		for _, c := range t.consumers {
@@ -285,14 +306,16 @@ func (t *topic) consume(offset int64) *partitionConsumer {
 	c := &partitionConsumer{
 		topic: t,
 	}
+	// Handle special offsets.
 	if offset == sarama.OffsetNewest {
 		offset = t.nextOffset
 	}
 	if offset == sarama.OffsetOldest {
 		offset = -1
 	}
-	c.messages = make(chan *sarama.ConsumerMessage, blockSize)
+	c.messages = make(chan *sarama.ConsumerMessage, channelSize)
 	t.consumers = append(t.consumers, c)
+	// Start catching up on historic messages in the background.
 	go c.catchup(offset)
 	return c
 }
@@ -300,7 +323,11 @@ func (t *topic) consume(offset int64) *partitionConsumer {
 func (t *topic) hasCaughtUp(c *partitionConsumer, offset int64) (bool, int64) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
+	// Check if we have caught up while holding a lock on the topic so there
+	// isn't a way for our check to race with a new message being sent on the topic.
 	if offset+1 == t.nextOffset {
+		// We've caught up, the consumer can now receive messages as they are
+		// sent rather than fetching them from the database.
 		c.ready = true
 		return true, t.nextOffset
 	}
