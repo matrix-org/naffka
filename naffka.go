@@ -60,9 +60,19 @@ func (m *Message) consumerMessage() *sarama.ConsumerMessage {
 // Messages are stored so that new consumers can access the full message history.
 type Database interface {
 	// StoreMessages stores a list of messages.
+	// Every message offset must be unique within each topic.
+	// Messages must be stored monotonically and contiguously for each topic.
+	// So for a given topic the message with offset n+1 is stored after the
+	// the message with offset n.
 	StoreMessages(messages []Message) error
 	// FetchMessages fetches all messages with an offset greater than but not
 	// including startOffset and less than but not including endOffset.
+	// The range of offsets requested must not overlap with those stored by a
+	// concurrent StoreMessages. The message offsets within the requested range
+	// are contigous. That is FetchMessage("foo", n, m) will only be called
+	// once the messages between n and m have been stored by StoreMessages.
+	// Every call must return at least one message. That is there must be at
+	// least one message between the start and offset.
 	FetchMessages(topic string, startOffset, endOffset int64) ([]Message, error)
 	// MaxOffsets returns the maximum offset for each topic.
 	MaxOffsets() (map[string]int64, error)

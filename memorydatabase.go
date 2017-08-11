@@ -19,24 +19,14 @@ type memoryDatabaseTopic struct {
 	messages      []Message
 }
 
-func (t *memoryDatabaseTopic) addMessage(msg *Message) {
+func (t *memoryDatabaseTopic) addMessage(msg *Message) error {
 	t.messagesMutex.Lock()
 	defer t.messagesMutex.Unlock()
-	for int64(len(t.messages)) < msg.Offset {
-		// Pad out the array with empty messages if the offset is bigger than
-		// the end of the array. This probably isn't necessary, since usually
-		// the messages are assigned sequential contiguous offsets. However until
-		// we commit to that restriction we should support out of order stores.
-		t.messages = append(t.messages, Message{})
+	if int64(len(t.messages)) != msg.Offset {
+		return fmt.Errorf("message offset %d is not immediately after the previous offset %d", msg.Offset, len(t.messages))
 	}
-	if int64(len(t.messages)) == msg.Offset {
-		t.messages = append(t.messages, *msg)
-	} else {
-		// Handle out of order stores. This probably isn't necessary, since
-		// the usually the messages are assigned sequential contiguous offsets.
-		// Until we commit to that restriction we support out of order stores.
-		t.messages[msg.Offset] = *msg
-	}
+	t.messages = append(t.messages, *msg)
+	return nil
 }
 
 func (t *memoryDatabaseTopic) getMessages() []Message {
@@ -62,7 +52,9 @@ func (m *MemoryDatabase) getTopic(topicName string) *memoryDatabaseTopic {
 // StoreMessages implements Database
 func (m *MemoryDatabase) StoreMessages(messages []Message) error {
 	for i := range messages {
-		m.getTopic(messages[i].Topic).addMessage(&messages[i])
+		if err := m.getTopic(messages[i].Topic).addMessage(&messages[i]); err != nil {
+			return err
+		}
 	}
 	return nil
 }
