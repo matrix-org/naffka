@@ -125,10 +125,8 @@ func (n *Naffka) Topics() ([]string, error) {
 // Partitions implements sarama.Consumer
 func (n *Naffka) Partitions(topic string) ([]int32, error) {
 	// Naffka stores a single partition per topic, so this always returns a single partition ID.
-	return partitions[:], nil
+	return []int32{0}, nil
 }
-
-var partitions = [1]int32{0}
 
 // ConsumePartition implements sarama.Consumer
 func (n *Naffka) ConsumePartition(topic string, partition int32, offset int64) (sarama.PartitionConsumer, error) {
@@ -222,6 +220,13 @@ func (c *partitionConsumer) catchup(fromOffset int64) {
 			// TODO: Add option to write consumer errors to an errors channel
 			// as an alternative to logging the errors.
 			log.Print("Error: reading messages", err)
+			// Wait before retrying.
+			// TODO: Maybe use an exponentional backoff scheme here.
+			// TODO: This timeout should take account of all the other goroutines
+			// that might be doing the same thing. (If there are a 10000 consumers
+			// then we don't want to end up retrying every millisecond)
+			time.Sleep(10 * time.Second)
+			continue
 		}
 		// Pass the messages into the consumer channel.
 		// Blocking each write until the channel has enough space for the message.
@@ -229,7 +234,9 @@ func (c *partitionConsumer) catchup(fromOffset int64) {
 			c.messages <- msgs[i].consumerMessage()
 		}
 		// Update our the offset for the next loop iteration.
-		fromOffset = msgs[len(msgs)-1].Offset
+		if len(msgs) > 0 {
+			fromOffset = msgs[len(msgs)-1].Offset
+		}
 	}
 }
 
