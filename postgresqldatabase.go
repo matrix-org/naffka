@@ -11,7 +11,7 @@ CREATE SEQUENCE IF NOT EXISTS naffka_topic_nid_seq;
 CREATE TABLE IF NOT EXISTS naffka_topics (
 	topic_name TEXT PRIMARY KEY,
 	topic_nid  BIGINT NOT NULL DEFAULT nextval('naffka_topic_nid_seq')
-)
+);
 
 CREATE TABLE IF NOT EXISTS naffka_messages (
 	topic_nid BIGINT NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS naffka_messages (
 
 const insertTopicSQL = "" +
 	"INSERT INTO naffka_topics (topic_name) VALUES ($1)" +
-	" ON CONFLICT DO NOTHING RETURNING (room_nid)"
+	" ON CONFLICT DO NOTHING RETURNING (topic_nid)"
 
 const selectTopicSQL = "" +
 	"SELECT topic_nid FROM naffka_topics WHERE topic_name = $1"
@@ -34,7 +34,7 @@ const selectTopicsSQL = "" +
 	"SELECT topic_name, topic_nid FROM naffka_topics"
 
 const insertMessageSQL = "" +
-	"INSERT INTO naffka_messages (topic_nid, message_offset, message_key, message_value, message_timestamp)" +
+	"INSERT INTO naffka_messages (topic_nid, message_offset, message_key, message_value, message_timestamp_ns)" +
 	" VALUES ($1, $2, $3, $4, $5)"
 
 const selectMessagesSQL = "" +
@@ -43,7 +43,8 @@ const selectMessagesSQL = "" +
 	" ORDER BY message_offset ASC"
 
 const selectMaxOffsetSQL = "" +
-	"SELECT topic_nid, MAX(message_offset) FROM naffka_messages GROUP BY topic_nid"
+	"SELECT message_offset FROM naffka_messages WHERE topic_nid = $1" +
+	" ORDER BY message_offset DESC LIMIT 1"
 
 type postgresqlDatabase struct {
 	db                  *sql.DB
@@ -90,7 +91,9 @@ func NewPostgresqlDatabase(db *sql.DB) (Database, error) {
 	return p, nil
 }
 
+// StoreMessages implements Database.
 func (p *postgresqlDatabase) StoreMessages(topic string, messages []Message) error {
+	// Store the messages inside a single database transaction.
 	return withTransaction(p.db, func(txn *sql.Tx) error {
 		s := txn.Stmt(p.insertMessageStmt)
 		topicNID, err := p.assignTopicNID(txn, topic)
@@ -107,6 +110,7 @@ func (p *postgresqlDatabase) StoreMessages(topic string, messages []Message) err
 	})
 }
 
+// FetchMessages implements Database.
 func (p *postgresqlDatabase) FetchMessages(topic string, startOffset, endOffset int64) (messages []Message, err error) {
 	topicNID, err := p.getTopicNID(nil, topic)
 	if err != nil {
@@ -137,29 +141,38 @@ func (p *postgresqlDatabase) FetchMessages(topic string, startOffset, endOffset 
 	return
 }
 
+// MaxOffsets implements Database.
 func (p *postgresqlDatabase) MaxOffsets() (map[string]int64, error) {
-	maxOffsets, err := p.selectMaxOffsets()
-	if err != nil {
-		return nil, err
-	}
 	topicNames, err := p.selectTopics()
 	if err != nil {
 		return nil, err
 	}
 	result := map[string]int64{}
-	for topicNID, maxOffset := range maxOffsets {
-		result[topicNames[topicNID]] = maxOffset
+	for topicName, topicNID := range topicNames {
+		// Lookup the maximum offset.
+		maxOffset, err := p.selectMaxOffset(topicNID)
+		if err != nil {
+			return nil, err
+		}
+		if maxOffset > -1 {
+			// Don't include the topic if we haven't sent any messages on it.
+			result[topicName] = maxOffset
+		}
+		// Prefill the numeric ID cache.
+		p.addTopicNIDToCache(topicName, topicNID)
 	}
 	return result, nil
 }
 
-func (p *postgresqlDatabase) selectTopics() (map[int64]string, error) {
+// selectTopics fetches the names and numeric IDs for all the topics the
+// database is aware of.
+func (p *postgresqlDatabase) selectTopics() (map[string]int64, error) {
 	rows, err := p.selectTopicsStmt.Query()
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	result := map[int64]string{}
+	result := map[string]int64{}
 	for rows.Next() {
 		var (
 			topicName string
@@ -168,36 +181,28 @@ func (p *postgresqlDatabase) selectTopics() (map[int64]string, error) {
 		if err = rows.Scan(&topicName, &topicNID); err != nil {
 			return nil, err
 		}
-		result[topicNID] = topicName
+		result[topicName] = topicNID
 	}
 	return result, nil
 }
 
-func (p *postgresqlDatabase) selectMaxOffsets() (map[int64]int64, error) {
-	rows, err := p.selectMaxOffsetStmt.Query()
-	if err != nil {
-		return nil, err
+// selectMaxOffset selects the maximum offset for a topic.
+// Returns -1 if there aren't any messages for that topic.
+// Returns an error if there was a problem talking to the database.
+func (p *postgresqlDatabase) selectMaxOffset(topicNID int64) (maxOffset int64, err error) {
+	err = p.selectMaxOffsetStmt.QueryRow(topicNID).Scan(&maxOffset)
+	if err == sql.ErrNoRows {
+		return -1, nil
 	}
-	defer rows.Close()
-	result := map[int64]int64{}
-	for rows.Next() {
-		var (
-			topicNID  int64
-			maxOffset int64
-		)
-		if err = rows.Scan(&topicNID, &maxOffset); err != nil {
-			return nil, err
-		}
-		result[topicNID] = maxOffset
-	}
-	return result, nil
+	return maxOffset, err
 }
 
+// getTopicNID finds the numeric ID for a topic.
+// The txn argument is optional, this can be used outside a transaction
+// by setting the txn argument to nil.
 func (p *postgresqlDatabase) getTopicNID(txn *sql.Tx, topicName string) (topicNID int64, err error) {
-	// Get from the shared cache.
-	p.topicsMutex.Lock()
-	topicNID = p.topicNIDs[topicName]
-	p.topicsMutex.Unlock()
+	// Get from the cache.
+	topicNID = p.getTopicNIDFromCache(topicName)
 	if topicNID != 0 {
 		return topicNID, nil
 	}
@@ -214,12 +219,12 @@ func (p *postgresqlDatabase) getTopicNID(txn *sql.Tx, topicName string) (topicNI
 		return 0, err
 	}
 	// Update the shared cache.
-	p.topicsMutex.Lock()
-	p.topicNIDs[topicName] = topicNID
-	p.topicsMutex.Unlock()
+	p.addTopicNIDToCache(topicName, topicNID)
 	return topicNID, nil
 }
 
+// assignTopicNID assigns a new numeric ID to a topic.
+// The txn argument is mandatory, this is always called inside a transaction.
 func (p *postgresqlDatabase) assignTopicNID(txn *sql.Tx, topicName string) (topicNID int64, err error) {
 	topicNID, err = p.getTopicNID(txn, topicName)
 	if err != nil {
@@ -235,11 +240,24 @@ func (p *postgresqlDatabase) assignTopicNID(txn *sql.Tx, topicName string) (topi
 	if err != nil {
 		return 0, err
 	}
-	// Update the shared cache.
-	p.topicsMutex.Lock()
-	p.topicNIDs[topicName] = topicNID
-	p.topicsMutex.Unlock()
+	// Update the cache.
+	p.addTopicNIDToCache(topicName, topicNID)
 	return topicNID, nil
+}
+
+// getTopicNIDFromCache returns the topicNID from the cache or returns 0 if the
+// topic is not in the cache.
+func (p *postgresqlDatabase) getTopicNIDFromCache(topicName string) (topicNID int64) {
+	p.topicsMutex.Lock()
+	defer p.topicsMutex.Unlock()
+	return p.topicNIDs[topicName]
+}
+
+// addTopicNIDToCache adds the numeric ID for the topic to the cache.
+func (p *postgresqlDatabase) addTopicNIDToCache(topicName string, topicNID int64) {
+	p.topicsMutex.Lock()
+	defer p.topicsMutex.Unlock()
+	p.topicNIDs[topicName] = topicNID
 }
 
 // withTransaction runs a block of code passing in an SQL transaction
