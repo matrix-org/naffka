@@ -23,11 +23,18 @@ func (t *memoryDatabaseTopic) addMessage(msg *Message) {
 	t.messagesMutex.Lock()
 	defer t.messagesMutex.Unlock()
 	for int64(len(t.messages)) < msg.Offset {
+		// Pad out the array with empty messages if the offset is bigger than
+		// the end of the array. This probably isn't necessary, since usually
+		// the messages are assigned sequential contiguous offsets. However until
+		// we commit to that restriction we should support out of order stores.
 		t.messages = append(t.messages, Message{})
 	}
 	if int64(len(t.messages)) == msg.Offset {
 		t.messages = append(t.messages, *msg)
 	} else {
+		// Handle out of order stores. This probably isn't necessary, since
+		// the usually the messages are assigned sequential contiguous offsets.
+		// Until we commit to that restriction we support out of order stores.
 		t.messages[msg.Offset] = *msg
 	}
 }
@@ -68,6 +75,9 @@ func (m *MemoryDatabase) FetchMessages(topic string, startOffset, endOffset int6
 	}
 	if startOffset >= endOffset {
 		return nil, fmt.Errorf("start offset %d greater than or equal to end offset %d", startOffset, endOffset)
+	}
+	if startOffset < -1 {
+		return nil, fmt.Errorf("start offset %d less than -1", startOffset)
 	}
 	return messages[startOffset+1 : endOffset], nil
 }
