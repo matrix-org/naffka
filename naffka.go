@@ -39,16 +39,15 @@ func New(db Database) (*Naffka, error) {
 // It is converted to a sarama.ConsumerMessage when exposed to the
 // public APIs to maintain API compatibility with sarama.
 type Message struct {
-	Topic     string
 	Offset    int64
 	Key       []byte
 	Value     []byte
 	Timestamp time.Time
 }
 
-func (m *Message) consumerMessage() *sarama.ConsumerMessage {
+func (m *Message) consumerMessage(topic string) *sarama.ConsumerMessage {
 	return &sarama.ConsumerMessage{
-		Topic:     m.Topic,
+		Topic:     topic,
 		Offset:    m.Offset,
 		Key:       m.Key,
 		Value:     m.Value,
@@ -64,7 +63,7 @@ type Database interface {
 	// Messages must be stored monotonically and contiguously for each topic.
 	// So for a given topic the message with offset n+1 is stored after the
 	// the message with offset n.
-	StoreMessages(messages []Message) error
+	StoreMessages(topic string, messages []Message) error
 	// FetchMessages fetches all messages with an offset greater than but not
 	// including startOffset and less than but not including endOffset.
 	// The range of offsets requested must not overlap with those stored by a
@@ -247,7 +246,7 @@ func (c *partitionConsumer) catchup(fromOffset int64) {
 		// Pass the messages into the consumer channel.
 		// Blocking each write until the channel has enough space for the message.
 		for i := range msgs {
-			c.messages <- msgs[i].consumerMessage()
+			c.messages <- msgs[i].consumerMessage(c.topic.topicName)
 		}
 		// Update our the offset for the next loop iteration.
 		fromOffset = msgs[len(msgs)-1].Offset
@@ -267,7 +266,6 @@ func (t *topic) send(now time.Time, pmsgs []*sarama.ProducerMessage) error {
 	// Encode the message keys and values.
 	msgs := make([]Message, len(pmsgs))
 	for i := range msgs {
-		msgs[i].Topic = pmsgs[i].Topic
 		if pmsgs[i].Key != nil {
 			msgs[i].Key, err = pmsgs[i].Key.Encode()
 			if err != nil {
@@ -293,7 +291,7 @@ func (t *topic) send(now time.Time, pmsgs []*sarama.ProducerMessage) error {
 		offset++
 	}
 	// Store the messages while we hold the lock.
-	err = t.db.StoreMessages(msgs)
+	err = t.db.StoreMessages(t.topicName, msgs)
 	if err != nil {
 		return err
 	}
@@ -301,7 +299,7 @@ func (t *topic) send(now time.Time, pmsgs []*sarama.ProducerMessage) error {
 
 	// Now notify the consumers about the messages.
 	for i := range msgs {
-		cmsg := msgs[i].consumerMessage()
+		cmsg := msgs[i].consumerMessage(t.topicName)
 		for _, c := range t.consumers {
 			if c.ready {
 				select {

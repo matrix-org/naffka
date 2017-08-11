@@ -19,13 +19,13 @@ type memoryDatabaseTopic struct {
 	messages      []Message
 }
 
-func (t *memoryDatabaseTopic) addMessage(msg *Message) error {
+func (t *memoryDatabaseTopic) addMessages(msgs []Message) error {
 	t.messagesMutex.Lock()
 	defer t.messagesMutex.Unlock()
-	if int64(len(t.messages)) != msg.Offset {
-		return fmt.Errorf("message offset %d is not immediately after the previous offset %d", msg.Offset, len(t.messages))
+	if int64(len(t.messages)) != msgs[0].Offset {
+		return fmt.Errorf("message offset %d is not immediately after the previous offset %d", msgs[0].Offset, len(t.messages))
 	}
-	t.messages = append(t.messages, *msg)
+	t.messages = append(t.messages, msgs...)
 	return nil
 }
 
@@ -50,11 +50,9 @@ func (m *MemoryDatabase) getTopic(topicName string) *memoryDatabaseTopic {
 }
 
 // StoreMessages implements Database
-func (m *MemoryDatabase) StoreMessages(messages []Message) error {
-	for i := range messages {
-		if err := m.getTopic(messages[i].Topic).addMessage(&messages[i]); err != nil {
-			return err
-		}
+func (m *MemoryDatabase) StoreMessages(topic string, messages []Message) error {
+	if err := m.getTopic(topic).addMessages(messages); err != nil {
+		return err
 	}
 	return nil
 }
