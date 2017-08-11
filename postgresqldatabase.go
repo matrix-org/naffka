@@ -90,15 +90,14 @@ func NewPostgresqlDatabase(db *sql.DB) (Database, error) {
 	return p, nil
 }
 
-func (p *postgresqlDatabase) StoreMessages(messages []Message) error {
+func (p *postgresqlDatabase) StoreMessages(topic string, messages []Message) error {
 	return withTransaction(p.db, func(txn *sql.Tx) error {
 		s := txn.Stmt(p.insertMessageStmt)
-		topics := map[string]int64{}
+		topicNID, err := p.assignTopicNID(txn, topic)
+		if err != nil {
+			return err
+		}
 		for _, m := range messages {
-			topicNID, err := p.assignTopicNID(txn, topics, m.Topic)
-			if err != nil {
-				return err
-			}
 			_, err = s.Exec(topicNID, m.Offset, m.Key, m.Value, m.Timestamp.UnixNano())
 			if err != nil {
 				return err
@@ -109,7 +108,7 @@ func (p *postgresqlDatabase) StoreMessages(messages []Message) error {
 }
 
 func (p *postgresqlDatabase) FetchMessages(topic string, startOffset, endOffset int64) (messages []Message, err error) {
-	topicNID, err := p.getTopicNID(nil, nil, topic)
+	topicNID, err := p.getTopicNID(nil, topic)
 	if err != nil {
 		return
 	}
@@ -129,7 +128,6 @@ func (p *postgresqlDatabase) FetchMessages(topic string, startOffset, endOffset 
 			return
 		}
 		messages = append(messages, Message{
-			Topic:     topic,
 			Offset:    offset,
 			Key:       key,
 			Value:     value,
@@ -195,20 +193,12 @@ func (p *postgresqlDatabase) selectMaxOffsets() (map[int64]int64, error) {
 	return result, nil
 }
 
-func (p *postgresqlDatabase) getTopicNID(txn *sql.Tx, topicNIDs map[string]int64, topicName string) (topicNID int64, err error) {
-	// Get from the local cache.
-	topicNID = topicNIDs[topicName]
-	if topicNID != 0 {
-		return topicNID, nil
-	}
+func (p *postgresqlDatabase) getTopicNID(txn *sql.Tx, topicName string) (topicNID int64, err error) {
 	// Get from the shared cache.
 	p.topicsMutex.Lock()
 	topicNID = p.topicNIDs[topicName]
 	p.topicsMutex.Unlock()
 	if topicNID != 0 {
-		if topicNIDs != nil {
-			topicNIDs[topicName] = topicNID
-		}
 		return topicNID, nil
 	}
 	// Get from the database
@@ -227,15 +217,11 @@ func (p *postgresqlDatabase) getTopicNID(txn *sql.Tx, topicNIDs map[string]int64
 	p.topicsMutex.Lock()
 	p.topicNIDs[topicName] = topicNID
 	p.topicsMutex.Unlock()
-	// Update the local cache.
-	if topicNIDs != nil {
-		topicNIDs[topicName] = topicNID
-	}
 	return topicNID, nil
 }
 
-func (p *postgresqlDatabase) assignTopicNID(txn *sql.Tx, topicNIDs map[string]int64, topicName string) (topicNID int64, err error) {
-	topicNID, err = p.getTopicNID(txn, topicNIDs, topicName)
+func (p *postgresqlDatabase) assignTopicNID(txn *sql.Tx, topicName string) (topicNID int64, err error) {
+	topicNID, err = p.getTopicNID(txn, topicName)
 	if err != nil {
 		return 0, err
 	}
@@ -244,7 +230,7 @@ func (p *postgresqlDatabase) assignTopicNID(txn *sql.Tx, topicNIDs map[string]in
 	}
 	err = txn.Stmt(p.insertTopicStmt).QueryRow(topicName).Scan(&topicNID)
 	if err == sql.ErrNoRows {
-		return p.getTopicNID(txn, topicNIDs, topicName)
+		return p.getTopicNID(txn, topicName)
 	}
 	if err != nil {
 		return 0, err
@@ -253,10 +239,6 @@ func (p *postgresqlDatabase) assignTopicNID(txn *sql.Tx, topicNIDs map[string]in
 	p.topicsMutex.Lock()
 	p.topicNIDs[topicName] = topicNID
 	p.topicsMutex.Unlock()
-	// Update the local cache.
-	if topicNIDs != nil {
-		topicNIDs[topicName] = topicNID
-	}
 	return topicNID, nil
 }
 
