@@ -219,7 +219,7 @@ func (c *partitionConsumer) catchup(fromOffset int64) {
 		if err != nil {
 			// TODO: Add option to write consumer errors to an errors channel
 			// as an alternative to logging the errors.
-			log.Print("Error: reading messages", err)
+			log.Print("Error reading messages: ", err)
 			// Wait before retrying.
 			// TODO: Maybe use an exponentional backoff scheme here.
 			// TODO: This timeout should take account of all the other goroutines
@@ -228,15 +228,19 @@ func (c *partitionConsumer) catchup(fromOffset int64) {
 			time.Sleep(10 * time.Second)
 			continue
 		}
+		if len(msgs) == 0 {
+			// This should only happen if the database is corrupted and has lost the
+			// messages between the requested offsets.
+			log.Fatalf("Corrupt database returned no messages between %d and %d", fromOffset, nextOffset)
+		}
+
 		// Pass the messages into the consumer channel.
 		// Blocking each write until the channel has enough space for the message.
 		for i := range msgs {
 			c.messages <- msgs[i].consumerMessage()
 		}
 		// Update our the offset for the next loop iteration.
-		if len(msgs) > 0 {
-			fromOffset = msgs[len(msgs)-1].Offset
-		}
+		fromOffset = msgs[len(msgs)-1].Offset
 	}
 }
 
