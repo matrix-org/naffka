@@ -61,8 +61,8 @@ func (m *Message) consumerMessage() *sarama.ConsumerMessage {
 type Database interface {
 	// StoreMessages stores a list of messages.
 	StoreMessages(messages []Message) error
-	// FetchMessages fetches all messages with an offset greater than startOffset
-	// and less than endOffset.
+	// FetchMessages fetches all messages with an offset greater than but not
+	// including startOffset and less than but not including endOffset.
 	FetchMessages(topic string, startOffset, endOffset int64) ([]Message, error)
 	// MaxOffsets returns the maximum offset for each topic.
 	MaxOffsets() (map[string]int64, error)
