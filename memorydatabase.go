@@ -29,6 +29,13 @@ func (t *memoryDatabaseTopic) addMessages(msgs []Message) error {
 	return nil
 }
 
+// getMessages returns the current messages as a slice.
+// This slice will have it's own copy of the length field so won't be affected
+// by adding more messages in addMessages.
+// The slice will share the same backing array with the slice we append new
+// messages to.  It is safe to read the messages in the backing array since we
+// only append to the slice.  It is not safe to write or append to the returned
+// slice.
 func (t *memoryDatabaseTopic) getMessages() []Message {
 	t.messagesMutex.Lock()
 	defer t.messagesMutex.Unlock()
