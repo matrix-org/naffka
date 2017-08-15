@@ -243,6 +243,7 @@ func (p *postgresqlDatabase) assignTopicNID(txn *sql.Tx, topicName string) (topi
 		// If the insert stmt succeeded, but didn't return any rows then it
 		// means that someone has added a row for the topic name between us
 		// selecting it the first time and us inserting our own row.
+		// (N.B. postgres only returns modified rows when using "RETURNING")
 		// So we can now just select the row that someone else added.
 		// TODO: This is probably unnecessary since naffka writes to a topic
 		// from a single thread.
