@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS naffka_messages (
 
 const insertTopicSQL = "" +
 	"INSERT INTO naffka_topics (topic_name) VALUES ($1)" +
-	" ON CONFLICT DO NOTHING RETURNING (topic_nid)"
+	" ON CONFLICT DO NOTHING" +
+	" RETURNING (topic_nid)"
 
 const selectTopicSQL = "" +
 	"SELECT topic_nid FROM naffka_topics WHERE topic_name = $1"
