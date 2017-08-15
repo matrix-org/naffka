@@ -7,12 +7,14 @@ import (
 )
 
 const postgresqlSchema = `
+-- The topic table assigns each topic a unique numeric ID.
 CREATE SEQUENCE IF NOT EXISTS naffka_topic_nid_seq;
 CREATE TABLE IF NOT EXISTS naffka_topics (
 	topic_name TEXT PRIMARY KEY,
 	topic_nid  BIGINT NOT NULL DEFAULT nextval('naffka_topic_nid_seq')
 );
 
+-- The messages table contains the actual messages.
 CREATE TABLE IF NOT EXISTS naffka_messages (
 	topic_nid BIGINT NOT NULL,
 	message_offset BIGINT NOT NULL,
@@ -116,7 +118,7 @@ func (p *postgresqlDatabase) FetchMessages(topic string, startOffset, endOffset 
 	if err != nil {
 		return
 	}
-	rows, err := p.selectMaxOffsetStmt.Query(topicNID, startOffset, endOffset)
+	rows, err := p.selectMessagesStmt.Query(topicNID, startOffset, endOffset)
 	if err != nil {
 		return
 	}
@@ -226,6 +228,7 @@ func (p *postgresqlDatabase) getTopicNID(txn *sql.Tx, topicName string) (topicNI
 // assignTopicNID assigns a new numeric ID to a topic.
 // The txn argument is mandatory, this is always called inside a transaction.
 func (p *postgresqlDatabase) assignTopicNID(txn *sql.Tx, topicName string) (topicNID int64, err error) {
+	// Check if we already have a numeric ID for the topic name.
 	topicNID, err = p.getTopicNID(txn, topicName)
 	if err != nil {
 		return 0, err
@@ -233,8 +236,16 @@ func (p *postgresqlDatabase) assignTopicNID(txn *sql.Tx, topicName string) (topi
 	if topicNID != 0 {
 		return topicNID, err
 	}
+	// We don't have a numeric ID for the topic name so we add an entry to the
+	// topics table. If the insert stmt succeeds then it will return the ID.
 	err = txn.Stmt(p.insertTopicStmt).QueryRow(topicName).Scan(&topicNID)
 	if err == sql.ErrNoRows {
+		// If the insert stmt succeeded, but didn't return any rows then it
+		// means that someone has added a row for the topic name between us
+		// selecting it the first time and us inserting our own row.
+		// So we can now just select the row that someone else added.
+		// TODO: This is probably unnecessary since naffka writes to a topic
+		// from a single thread.
 		return p.getTopicNID(txn, topicName)
 	}
 	if err != nil {
