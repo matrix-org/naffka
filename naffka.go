@@ -28,6 +28,7 @@ func New(db Database) (*Naffka, error) {
 	}
 	for topicName, offset := range maxOffsets {
 		n.topics[topicName] = &topic{
+			db:         db,
 			topicName:  topicName,
 			nextOffset: offset + 1,
 		}
