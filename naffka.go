@@ -221,9 +221,11 @@ func (c *partitionConsumer) catchup(fromOffset int64) {
 
 	c.catchingUp = true
 
+	// Due to the checks above there can only be one of these goroutines
+	// running at a time
 	go func() {
 		for {
-			// Check if we're up to date yet.
+			// Check if we're up to date yet. If we are we exit catchup mode.
 			c.topic.mutex.Lock()
 			nextOffset := c.topic.nextOffset
 			if fromOffset == nextOffset {
