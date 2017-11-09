@@ -138,6 +138,7 @@ func (n *Naffka) Partitions(topic string) ([]int32, error) {
 }
 
 // ConsumePartition implements sarama.Consumer
+// Note: offset is *inclusive*, i.e. it will include the message with that offset.
 func (n *Naffka) ConsumePartition(topic string, partition int32, offset int64) (sarama.PartitionConsumer, error) {
 	if partition != 0 {
 		return nil, fmt.Errorf("Unknown partition ID %d", partition)
@@ -254,10 +255,12 @@ func (c *partitionConsumer) catchup(fromOffset int64) {
 }
 
 type topic struct {
-	db         Database
-	topicName  string
-	mutex      sync.Mutex
-	consumers  []*partitionConsumer
+	db        Database
+	topicName string
+	mutex     sync.Mutex
+	consumers []*partitionConsumer
+	// nextOffset is the offset that will be assigned to the next message in
+	// this topic, i.e. one greater than the last message offset.
 	nextOffset int64
 }
 
