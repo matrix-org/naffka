@@ -64,7 +64,7 @@ type Database interface {
 	// So for a given topic the message with offset n+1 is stored after the
 	// the message with offset n.
 	StoreMessages(topic string, messages []Message) error
-	// FetchMessages fetches all messages with an offset greater than but not
+	// FetchMessages fetches all messages with an offset greater than and
 	// including startOffset and less than but not including endOffset.
 	// The range of offsets requested must not overlap with those stored by a
 	// concurrent StoreMessages. The message offsets within the requested range
@@ -249,7 +249,7 @@ func (c *partitionConsumer) catchup(fromOffset int64) {
 			c.messages <- msgs[i].consumerMessage(c.topic.topicName)
 		}
 		// Update our the offset for the next loop iteration.
-		fromOffset = msgs[len(msgs)-1].Offset
+		fromOffset = msgs[len(msgs)-1].Offset + 1
 	}
 }
 
@@ -330,7 +330,7 @@ func (t *topic) consume(offset int64) *partitionConsumer {
 		offset = t.nextOffset
 	}
 	if offset == sarama.OffsetOldest {
-		offset = -1
+		offset = 0
 	}
 	c.messages = make(chan *sarama.ConsumerMessage, channelSize)
 	t.consumers = append(t.consumers, c)
@@ -344,7 +344,7 @@ func (t *topic) hasCaughtUp(c *partitionConsumer, offset int64) (bool, int64) {
 	defer t.mutex.Unlock()
 	// Check if we have caught up while holding a lock on the topic so there
 	// isn't a way for our check to race with a new message being sent on the topic.
-	if offset+1 == t.nextOffset {
+	if offset == t.nextOffset {
 		// We've caught up, the consumer can now receive messages as they are
 		// sent rather than fetching them from the database.
 		c.ready = true
