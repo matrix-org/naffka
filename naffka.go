@@ -65,7 +65,7 @@ type Database interface {
 	// So for a given topic the message with offset n+1 is stored after the
 	// the message with offset n.
 	StoreMessages(topic string, messages []Message) error
-	// FetchMessages fetches all messages with an offset greater than but not
+	// FetchMessages fetches all messages with an offset greater than and
 	// including startOffset and less than but not including endOffset.
 	// The range of offsets requested must not overlap with those stored by a
 	// concurrent StoreMessages. The message offsets within the requested range
@@ -139,6 +139,7 @@ func (n *Naffka) Partitions(topic string) ([]int32, error) {
 }
 
 // ConsumePartition implements sarama.Consumer
+// Note: offset is *inclusive*, i.e. it will include the message with that offset.
 func (n *Naffka) ConsumePartition(topic string, partition int32, offset int64) (sarama.PartitionConsumer, error) {
 	if partition != 0 {
 		return nil, fmt.Errorf("Unknown partition ID %d", partition)
@@ -250,15 +251,17 @@ func (c *partitionConsumer) catchup(fromOffset int64) {
 			c.messages <- msgs[i].consumerMessage(c.topic.topicName)
 		}
 		// Update our the offset for the next loop iteration.
-		fromOffset = msgs[len(msgs)-1].Offset
+		fromOffset = msgs[len(msgs)-1].Offset + 1
 	}
 }
 
 type topic struct {
-	db         Database
-	topicName  string
-	mutex      sync.Mutex
-	consumers  []*partitionConsumer
+	db        Database
+	topicName string
+	mutex     sync.Mutex
+	consumers []*partitionConsumer
+	// nextOffset is the offset that will be assigned to the next message in
+	// this topic, i.e. one greater than the last message offset.
 	nextOffset int64
 }
 
@@ -331,7 +334,7 @@ func (t *topic) consume(offset int64) *partitionConsumer {
 		offset = t.nextOffset
 	}
 	if offset == sarama.OffsetOldest {
-		offset = -1
+		offset = 0
 	}
 	c.messages = make(chan *sarama.ConsumerMessage, channelSize)
 	t.consumers = append(t.consumers, c)
@@ -345,7 +348,7 @@ func (t *topic) hasCaughtUp(c *partitionConsumer, offset int64) (bool, int64) {
 	defer t.mutex.Unlock()
 	// Check if we have caught up while holding a lock on the topic so there
 	// isn't a way for our check to race with a new message being sent on the topic.
-	if offset+1 == t.nextOffset {
+	if offset == t.nextOffset {
 		// We've caught up, the consumer can now receive messages as they are
 		// sent rather than fetching them from the database.
 		c.ready = true

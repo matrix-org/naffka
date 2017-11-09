@@ -73,10 +73,10 @@ func (m *MemoryDatabase) FetchMessages(topic string, startOffset, endOffset int6
 	if startOffset >= endOffset {
 		return nil, fmt.Errorf("start offset %d greater than or equal to end offset %d", startOffset, endOffset)
 	}
-	if startOffset < -1 {
-		return nil, fmt.Errorf("start offset %d less than -1", startOffset)
+	if startOffset < 0 {
+		return nil, fmt.Errorf("start offset %d less than 0", startOffset)
 	}
-	return messages[startOffset+1 : endOffset], nil
+	return messages[startOffset:endOffset], nil
 }
 
 // MaxOffsets implements Database

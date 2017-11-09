@@ -42,7 +42,7 @@ const insertMessageSQL = "" +
 
 const selectMessagesSQL = "" +
 	"SELECT message_offset, message_key, message_value, message_timestamp_ns" +
-	" FROM naffka_messages WHERE topic_nid = $1 AND $2 < message_offset AND message_offset < $3" +
+	" FROM naffka_messages WHERE topic_nid = $1 AND $2 <= message_offset AND message_offset < $3" +
 	" ORDER BY message_offset ASC"
 
 const selectMaxOffsetSQL = "" +
