@@ -276,16 +276,18 @@ func (c *partitionConsumer) catchup(fromOffset int64) {
 func (c *partitionConsumer) notifyNewMessage(cmsg *sarama.ConsumerMessage) {
 	// If we're in "catchup" mode then the catchup routine will send the
 	// message later, since cmsg has already been written to the database
-	if !c.catchingUp {
-		// Otherwise, lets try writing the message directly to the channel
-		select {
-		case c.messages <- cmsg:
-		default:
-			// The messages channel has filled up, so lets go into catchup
-			// mode. Once the channel starts being read from again messages
-			// will be read from the database
-			c.catchup(cmsg.Offset)
-		}
+	if c.catchingUp {
+		return
+	}
+
+	// Otherwise, lets try writing the message directly to the channel
+	select {
+	case c.messages <- cmsg:
+	default:
+		// The messages channel has filled up, so lets go into catchup
+		// mode. Once the channel starts being read from again messages
+		// will be read from the database
+		c.catchup(cmsg.Offset)
 	}
 }
 
