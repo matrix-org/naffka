@@ -180,6 +180,9 @@ func TestChannelSaturation(t *testing.T) {
 	}
 
 	channelSize := cap(c.Messages())
+
+	// We want to send enough messages to fill up the channel, so lets double
+	// the size of the channel. And add three in case its a zero sized channel
 	numberMessagesToSend := 2*channelSize + 3
 
 	var sentMessages []string
