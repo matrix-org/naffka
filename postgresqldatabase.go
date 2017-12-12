@@ -142,9 +142,9 @@ func (p *postgresqlDatabase) FetchMessages(topic string, startOffset, endOffset 
 			key           []byte
 			value         []byte
 			timestampNano int64
-			headerlists   [][]byte
+			headerlists   pq.ByteaArray
 		)
-		if err = rows.Scan(&offset, &key, &value, &timestampNano, pq.Array(&headerlists)); err != nil {
+		if err = rows.Scan(&offset, &key, &value, &timestampNano, &headerlists); err != nil {
 			return
 		}
 
