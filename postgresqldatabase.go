@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS naffka_messages (
 	message_key BYTEA NOT NULL,
 	message_value BYTEA NOT NULL,
 	message_timestamp_ns BIGINT NOT NULL,
-	message_headers BYTEA[] NOT NULL,  -- RecordHeaders stored in alternating key value pairs
+	-- RecordHeaders stored in alternating key value pairs. We do this here
+	-- rather than in a separate table as it makes the querying of ranges of
+	-- messages much more straightforward.
+	message_headers BYTEA[] NOT NULL,
 	UNIQUE (topic_nid, message_offset)
 );
 `
