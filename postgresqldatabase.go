@@ -4,6 +4,11 @@ import (
 	"database/sql"
 	"sync"
 	"time"
+
+	"github.com/lib/pq"
+	"github.com/pkg/errors"
+
+	sarama "gopkg.in/Shopify/sarama.v1"
 )
 
 const postgresqlSchema = `
@@ -21,6 +26,10 @@ CREATE TABLE IF NOT EXISTS naffka_messages (
 	message_key BYTEA NOT NULL,
 	message_value BYTEA NOT NULL,
 	message_timestamp_ns BIGINT NOT NULL,
+	-- RecordHeaders stored in alternating key value pairs. We do this here
+	-- rather than in a separate table as it makes the querying of ranges of
+	-- messages much more straightforward.
+	message_headers BYTEA[] NOT NULL,
 	UNIQUE (topic_nid, message_offset)
 );
 `
@@ -37,11 +46,11 @@ const selectTopicsSQL = "" +
 	"SELECT topic_name, topic_nid FROM naffka_topics"
 
 const insertMessageSQL = "" +
-	"INSERT INTO naffka_messages (topic_nid, message_offset, message_key, message_value, message_timestamp_ns)" +
-	" VALUES ($1, $2, $3, $4, $5)"
+	"INSERT INTO naffka_messages (topic_nid, message_offset, message_key, message_value, message_timestamp_ns, message_headers)" +
+	" VALUES ($1, $2, $3, $4, $5, $6)"
 
 const selectMessagesSQL = "" +
-	"SELECT message_offset, message_key, message_value, message_timestamp_ns" +
+	"SELECT message_offset, message_key, message_value, message_timestamp_ns, message_headers" +
 	" FROM naffka_messages WHERE topic_nid = $1 AND $2 <= message_offset AND message_offset < $3" +
 	" ORDER BY message_offset ASC"
 
@@ -104,7 +113,13 @@ func (p *postgresqlDatabase) StoreMessages(topic string, messages []Message) err
 			return err
 		}
 		for _, m := range messages {
-			_, err = s.Exec(topicNID, m.Offset, m.Key, m.Value, m.Timestamp.UnixNano())
+			// We store the headers as alternating key value pairs
+			var headers [][]byte
+			for _, h := range m.Headers {
+				headers = append(headers, h.Key, h.Value)
+			}
+
+			_, err = s.Exec(topicNID, m.Offset, m.Key, m.Value, m.Timestamp.UnixNano(), pq.Array(headers))
 			if err != nil {
 				return err
 			}
@@ -130,15 +145,36 @@ func (p *postgresqlDatabase) FetchMessages(topic string, startOffset, endOffset 
 			key           []byte
 			value         []byte
 			timestampNano int64
+			headerlists   pq.ByteaArray
 		)
-		if err = rows.Scan(&offset, &key, &value, &timestampNano); err != nil {
+		if err = rows.Scan(&offset, &key, &value, &timestampNano, &headerlists); err != nil {
 			return
 		}
+
+		// We store the headers as alternating key value pairs, so check that
+		// there are an even number
+		if len(headerlists)%2 != 0 {
+			err = errors.Errorf(
+				"message_headers has non even number of entries for topic %s offset %d",
+				topic, offset,
+			)
+			return
+		}
+
+		var headers []sarama.RecordHeader
+		for i := 0; i < len(headerlists); i += 2 {
+			headers = append(headers, sarama.RecordHeader{
+				Key:   headerlists[i],
+				Value: headerlists[i+1],
+			})
+		}
+
 		messages = append(messages, Message{
 			Offset:    offset,
 			Key:       key,
 			Value:     value,
 			Timestamp: time.Unix(0, timestampNano),
+			Headers:   headers,
 		})
 	}
 	return

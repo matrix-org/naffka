@@ -45,15 +45,22 @@ type Message struct {
 	Key       []byte
 	Value     []byte
 	Timestamp time.Time
+	Headers   []sarama.RecordHeader
 }
 
 func (m *Message) consumerMessage(topic string) *sarama.ConsumerMessage {
+	var headers []*sarama.RecordHeader
+	for _, header := range m.Headers {
+		headers = append(headers, &header)
+	}
+
 	return &sarama.ConsumerMessage{
 		Topic:     topic,
 		Offset:    m.Offset,
 		Key:       m.Key,
 		Value:     m.Value,
 		Timestamp: m.Timestamp,
+		Headers:   headers,
 	}
 }
 
@@ -321,6 +328,8 @@ func (t *topic) send(now time.Time, pmsgs []*sarama.ProducerMessage) error {
 		}
 		pmsgs[i].Timestamp = now
 		msgs[i].Timestamp = now
+
+		msgs[i].Headers = pmsgs[i].Headers
 	}
 	// Take the lock before assigning the offsets.
 	t.mutex.Lock()
