@@ -19,6 +19,6 @@ then
 fi
 
 ineffassign .
-go tool vet --all --shadow .
+go vet --all -vettool=$(which shadow)
 gocyclo -over 16 .
 go test -timeout 5s . ./...
