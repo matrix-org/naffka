@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	sarama "gopkg.in/Shopify/sarama.v1"
+	sarama "github.com/Shopify/sarama"
 )
 
 // Naffka is an implementation of the sarama kafka API designed to run within a
