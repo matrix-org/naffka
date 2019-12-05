@@ -8,7 +8,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
 
-	sarama "gopkg.in/Shopify/sarama.v1"
+	sarama "github.com/Shopify/sarama"
 )
 
 const postgresqlSchema = `
