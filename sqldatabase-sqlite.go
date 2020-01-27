@@ -14,10 +14,10 @@ CREATE TABLE IF NOT EXISTS naffka_topics (
 -- The messages table contains the actual messages.
 CREATE TABLE IF NOT EXISTS naffka_messages (
 	topic_nid INTEGER NOT NULL,
-	message_offset BIGINT NOT NULL,
-	message_key BYTEA NOT NULL,
-	message_value BYTEA NOT NULL,
-	message_timestamp_ns BIGINT NOT NULL,
+	message_offset BLOB NOT NULL,
+	message_key BLOB NOT NULL,
+	message_value BLOB NOT NULL,
+	message_timestamp_ns INTEGER NOT NULL,
 	UNIQUE (topic_nid, message_offset)
 );
 `
@@ -27,7 +27,7 @@ const sqliteInsertTopicSQL = "" +
 	" ON CONFLICT DO NOTHING"
 
 const sqliteSelectNextTopicNID = "" +
-	"SELECT COUNT(topic_nid) AS topic_nid FROM naffka_topics"
+	"SELECT COUNT(topic_nid)+1 AS topic_nid FROM naffka_topics"
 
 const sqliteSelectTopicSQL = "" +
 	"SELECT topic_nid FROM naffka_topics WHERE topic_name = $1"
