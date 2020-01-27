@@ -179,11 +179,11 @@ func (p *DatabaseImpl) assignTopicNID(txn *sql.Tx, topicName string) (topicNID i
 		return 0, err
 	}
 	if topicNID != 0 {
-		return topicNID, err
+		return topicNID, nil
 	}
 	// Get the next topic ID from the database
-	err = txn.Stmt(p.selectNextTopicNIDStmt).QueryRow(topicName).Scan(&topicNID)
-	if err == sql.ErrNoRows {
+	err = txn.Stmt(p.selectNextTopicNIDStmt).QueryRow().Scan(&topicNID)
+	if err != nil {
 		return 0, err
 	}
 	// We don't have a numeric ID for the topic name so we add an entry to the
