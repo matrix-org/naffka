@@ -24,9 +24,11 @@ CREATE TABLE IF NOT EXISTS naffka_messages (
 `
 
 const postgresqlInsertTopicSQL = "" +
-	"INSERT INTO naffka_topics (topic_name) VALUES ($1)" +
-	" ON CONFLICT DO NOTHING" +
-	" RETURNING (topic_nid)"
+	"INSERT INTO naffka_topics (topic_name, topic_nid) VALUES ($1, $2)" +
+	" ON CONFLICT DO NOTHING"
+
+const postgresqlSelectNextTopicNID = "" +
+	"SELECT nextval('naffka_topic_nid_seq') AS topic_nid"
 
 const postgresqlSelectTopicSQL = "" +
 	"SELECT topic_nid FROM naffka_topics WHERE topic_name = $1"
@@ -66,6 +68,7 @@ func NewPostgresqlDatabase(db *sql.DB) (*DatabaseImpl, error) {
 		stmt **sql.Stmt
 	}{
 		{postgresqlInsertTopicSQL, &p.insertTopicStmt},
+		{postgresqlSelectNextTopicNID, &p.selectNextTopicNIDStmt},
 		{postgresqlSelectTopicSQL, &p.selectTopicStmt},
 		{postgresqlSelectTopicsSQL, &p.selectTopicsStmt},
 		{postgresqlInsertTopicsSQL, &p.insertMessageStmt},

@@ -7,15 +7,16 @@ import (
 )
 
 type DatabaseImpl struct {
-	db                  *sql.DB
-	topicsMutex         sync.Mutex
-	topicNIDs           map[string]int64
-	insertTopicStmt     *sql.Stmt
-	selectTopicStmt     *sql.Stmt
-	selectTopicsStmt    *sql.Stmt
-	insertMessageStmt   *sql.Stmt
-	selectMessagesStmt  *sql.Stmt
-	selectMaxOffsetStmt *sql.Stmt
+	db                     *sql.DB
+	topicsMutex            sync.Mutex
+	topicNIDs              map[string]int64
+	insertTopicStmt        *sql.Stmt
+	selectNextTopicNIDStmt *sql.Stmt
+	selectTopicStmt        *sql.Stmt
+	selectTopicsStmt       *sql.Stmt
+	insertMessageStmt      *sql.Stmt
+	selectMessagesStmt     *sql.Stmt
+	selectMaxOffsetStmt    *sql.Stmt
 }
 
 // StoreMessages implements Database.
@@ -150,6 +151,25 @@ func (p *DatabaseImpl) getTopicNID(txn *sql.Tx, topicName string) (topicNID int6
 	return topicNID, nil
 }
 
+// getNextTopicNID finds the numeric ID for the next topic.
+// The txn argument is optional, this can be used outside a transaction
+// by setting the txn argument to nil.
+func (p *DatabaseImpl) getNextTopicNID(txn *sql.Tx, topicName string) (topicNID int64, err error) {
+	// Get from the database
+	s := p.selectNextTopicNIDStmt
+	if txn != nil {
+		s = txn.Stmt(s)
+	}
+	err = s.QueryRow(topicName).Scan(&topicNID)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return topicNID, nil
+}
+
 // assignTopicNID assigns a new numeric ID to a topic.
 // The txn argument is mandatory, this is always called inside a transaction.
 func (p *DatabaseImpl) assignTopicNID(txn *sql.Tx, topicName string) (topicNID int64, err error) {
@@ -161,19 +181,14 @@ func (p *DatabaseImpl) assignTopicNID(txn *sql.Tx, topicName string) (topicNID i
 	if topicNID != 0 {
 		return topicNID, err
 	}
+	// Get the next topic ID from the database
+	err = txn.Stmt(p.selectNextTopicNIDStmt).QueryRow(topicName).Scan(&topicNID)
+	if err == sql.ErrNoRows {
+		return 0, err
+	}
 	// We don't have a numeric ID for the topic name so we add an entry to the
 	// topics table. If the insert stmt succeeds then it will return the ID.
-	err = txn.Stmt(p.insertTopicStmt).QueryRow(topicName).Scan(&topicNID)
-	if err == sql.ErrNoRows {
-		// If the insert stmt succeeded, but didn't return any rows then it
-		// means that someone has added a row for the topic name between us
-		// selecting it the first time and us inserting our own row.
-		// (N.B. postgres only returns modified rows when using "RETURNING")
-		// So we can now just select the row that someone else added.
-		// TODO: This is probably unnecessary since naffka writes to a topic
-		// from a single thread.
-		return p.getTopicNID(txn, topicName)
-	}
+	_, err = txn.Stmt(p.insertTopicStmt).Exec(topicName, topicNID)
 	if err != nil {
 		return 0, err
 	}

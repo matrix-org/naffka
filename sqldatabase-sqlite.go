@@ -23,9 +23,11 @@ CREATE TABLE IF NOT EXISTS naffka_messages (
 `
 
 const sqliteInsertTopicSQL = "" +
-	"INSERT INTO naffka_topics (topic_name) VALUES ($1)" +
-	" ON CONFLICT DO NOTHING" /* +
-	" RETURNING topic_nid" */
+	"INSERT INTO naffka_topics (topic_name, topic_nid) VALUES ($1, $2)" +
+	" ON CONFLICT DO NOTHING"
+
+const sqliteSelectNextTopicNID = "" +
+	"SELECT COUNT(topic_nid) FROM naffka_topics"
 
 const sqliteSelectTopicSQL = "" +
 	"SELECT topic_nid FROM naffka_topics WHERE topic_name = $1"
@@ -65,6 +67,7 @@ func NewSqliteDatabase(db *sql.DB) (*DatabaseImpl, error) {
 		stmt **sql.Stmt
 	}{
 		{sqliteInsertTopicSQL, &p.insertTopicStmt},
+		{sqliteSelectNextTopicNID, &p.selectNextTopicNIDStmt},
 		{sqliteSelectTopicSQL, &p.selectTopicStmt},
 		{sqliteSelectTopicsSQL, &p.selectTopicsStmt},
 		{sqliteInsertTopicsSQL, &p.insertMessageStmt},
