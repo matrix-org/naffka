@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	sarama "github.com/Shopify/sarama"
+	sarama "gopkg.in/Shopify/sarama.v1"
 )
 
 func TestSendAndReceive(t *testing.T) {
