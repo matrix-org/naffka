@@ -27,7 +27,7 @@ const postgresqlInsertTopicSQL = "" +
 	"INSERT INTO naffka_topics (topic_name, topic_nid) VALUES ($1, $2)" +
 	" ON CONFLICT DO NOTHING"
 
-const postgresqlSelectNextTopicNID = "" +
+const postgresqlSelectNextTopicNIDSQL = "" +
 	"SELECT nextval('naffka_topic_nid_seq') AS topic_nid"
 
 const postgresqlSelectTopicSQL = "" +
@@ -68,7 +68,7 @@ func NewPostgresqlDatabase(db *sql.DB) (*DatabaseImpl, error) {
 		stmt **sql.Stmt
 	}{
 		{postgresqlInsertTopicSQL, &p.insertTopicStmt},
-		{postgresqlSelectNextTopicNID, &p.selectNextTopicNIDStmt},
+		{postgresqlSelectNextTopicNIDSQL, &p.selectNextTopicNIDStmt},
 		{postgresqlSelectTopicSQL, &p.selectTopicStmt},
 		{postgresqlSelectTopicsSQL, &p.selectTopicsStmt},
 		{postgresqlInsertTopicsSQL, &p.insertMessageStmt},

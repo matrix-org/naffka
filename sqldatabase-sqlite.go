@@ -26,7 +26,7 @@ const sqliteInsertTopicSQL = "" +
 	"INSERT INTO naffka_topics (topic_name, topic_nid) VALUES ($1, $2)" +
 	" ON CONFLICT DO NOTHING"
 
-const sqliteSelectNextTopicNID = "" +
+const sqliteSelectNextTopicNIDSQL = "" +
 	"SELECT COUNT(topic_nid)+1 AS topic_nid FROM naffka_topics"
 
 const sqliteSelectTopicSQL = "" +
@@ -67,7 +67,7 @@ func NewSqliteDatabase(db *sql.DB) (*DatabaseImpl, error) {
 		stmt **sql.Stmt
 	}{
 		{sqliteInsertTopicSQL, &p.insertTopicStmt},
-		{sqliteSelectNextTopicNID, &p.selectNextTopicNIDStmt},
+		{sqliteSelectNextTopicNIDSQL, &p.selectNextTopicNIDStmt},
 		{sqliteSelectTopicSQL, &p.selectTopicStmt},
 		{sqliteSelectTopicsSQL, &p.selectTopicsStmt},
 		{sqliteInsertTopicsSQL, &p.insertMessageStmt},
