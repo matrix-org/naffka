@@ -27,7 +27,7 @@ const sqliteInsertTopicSQL = "" +
 	" ON CONFLICT DO NOTHING"
 
 const sqliteSelectNextTopicNID = "" +
-	"SELECT COUNT(topic_nid) FROM naffka_topics"
+	"SELECT COUNT(topic_nid) AS topic_nid FROM naffka_topics"
 
 const sqliteSelectTopicSQL = "" +
 	"SELECT topic_nid FROM naffka_topics WHERE topic_name = $1"
