@@ -50,8 +50,8 @@ type Message struct {
 
 func (m *Message) consumerMessage(topic string) *sarama.ConsumerMessage {
 	var headers []*sarama.RecordHeader
-	for _, header := range m.Headers {
-		headers = append(headers, &header)
+	for i := range m.Headers {
+		headers = append(headers, &headers[i])
 	}
 
 	return &sarama.ConsumerMessage{
