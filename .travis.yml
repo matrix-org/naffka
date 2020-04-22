@@ -3,5 +3,5 @@ go:
  - 1.13.10
 install:
  - go get github.com/golangci/golangci-lint/cmd/golangci-lint@v1.24.0
- - go get -d ...  # Downloads all the dependencies of naffka
+ - go build
 script: ./hooks/pre-commit
