@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+// DatabaseImpl represents a database implementation, either Postgres
+// or SQLite.
 type DatabaseImpl struct {
 	db                     *sql.DB
 	topicsMutex            sync.Mutex
@@ -151,25 +153,6 @@ func (p *DatabaseImpl) getTopicNID(txn *sql.Tx, topicName string) (topicNID int6
 	return topicNID, nil
 }
 
-// getNextTopicNID finds the numeric ID for the next topic.
-// The txn argument is optional, this can be used outside a transaction
-// by setting the txn argument to nil.
-func (p *DatabaseImpl) getNextTopicNID(txn *sql.Tx, topicName string) (topicNID int64, err error) {
-	// Get from the database
-	s := p.selectNextTopicNIDStmt
-	if txn != nil {
-		s = txn.Stmt(s)
-	}
-	err = s.QueryRow(topicName).Scan(&topicNID)
-	if err == sql.ErrNoRows {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	return topicNID, nil
-}
-
 // assignTopicNID assigns a new numeric ID to a topic.
 // The txn argument is mandatory, this is always called inside a transaction.
 func (p *DatabaseImpl) assignTopicNID(txn *sql.Tx, topicName string) (topicNID int64, err error) {
@@ -222,10 +205,10 @@ func withTransaction(db *sql.DB, fn func(txn *sql.Tx) error) (err error) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			txn.Rollback()
+			_ = txn.Rollback()
 			panic(r)
 		} else if err != nil {
-			txn.Rollback()
+			_ = txn.Rollback()
 		} else {
 			err = txn.Commit()
 		}

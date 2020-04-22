@@ -35,7 +35,7 @@ func TestSendAndReceive(t *testing.T) {
 	var result *sarama.ConsumerMessage
 	select {
 	case result = <-c.Messages():
-	case _ = <-time.NewTimer(10 * time.Second).C:
+	case <-time.NewTimer(10 * time.Second).C:
 		t.Fatal("expected to receive a message")
 	}
 
@@ -44,7 +44,7 @@ func TestSendAndReceive(t *testing.T) {
 	}
 
 	select {
-	case result = <-c.Messages():
+	case <-c.Messages():
 		t.Fatal("expected to only receive one message")
 	default:
 	}
@@ -77,7 +77,7 @@ func TestDelayedReceive(t *testing.T) {
 	var result *sarama.ConsumerMessage
 	select {
 	case result = <-c.Messages():
-	case _ = <-time.NewTimer(10 * time.Second).C:
+	case <-time.NewTimer(10 * time.Second).C:
 		t.Fatal("expected to receive a message")
 	}
 
@@ -114,7 +114,7 @@ func TestCatchup(t *testing.T) {
 	var result *sarama.ConsumerMessage
 	select {
 	case result = <-c.Messages():
-	case _ = <-time.NewTimer(10 * time.Second).C:
+	case <-time.NewTimer(10 * time.Second).C:
 		t.Fatal("expected to receive a message")
 	}
 
@@ -153,7 +153,7 @@ func TestCatchup(t *testing.T) {
 	var result2 *sarama.ConsumerMessage
 	select {
 	case result2 = <-c2.Messages():
-	case _ = <-time.NewTimer(10 * time.Second).C:
+	case <-time.NewTimer(10 * time.Second).C:
 		t.Fatal("expected to receive a message")
 	}
 
@@ -208,7 +208,7 @@ func TestChannelSaturation(t *testing.T) {
 	for ; j < numberMessagesToSend; j++ {
 		select {
 		case result = <-c.Messages():
-		case _ = <-time.NewTimer(10 * time.Second).C:
+		case <-time.NewTimer(10 * time.Second).C:
 			t.Fatalf("failed to receive message %d out of %d", j+1, numberMessagesToSend)
 		}
 
@@ -219,7 +219,7 @@ func TestChannelSaturation(t *testing.T) {
 	}
 
 	select {
-	case result = <-c.Messages():
+	case <-c.Messages():
 		t.Fatalf("expected to only receive %d messages", numberMessagesToSend)
 	default:
 	}
