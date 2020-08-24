@@ -108,11 +108,13 @@ func (p *Database) assignTopicNID(topicName string) (topicNID int64, err error) 
 		return topicNID, nil
 	}
 	// Assign a new topic NID if we don't.
-	topicNID, err = p.TopicsTable.SelectNextTopicNID(context.TODO(), nil)
-	if err != nil {
-		return 0, err
-	}
-	err = p.TopicsTable.InsertTopic(context.TODO(), nil, topicName, topicNID)
+	err = p.Writer.Do(p.DB, nil, func(txn *sql.Tx) error {
+		topicNID, err = p.TopicsTable.SelectNextTopicNID(context.TODO(), txn)
+		if err != nil {
+			return err
+		}
+		return p.TopicsTable.InsertTopic(context.TODO(), txn, topicName, topicNID)
+	})
 	if err != nil {
 		return 0, err
 	}
