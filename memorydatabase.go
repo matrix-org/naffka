@@ -3,6 +3,8 @@ package naffka
 import (
 	"fmt"
 	"sync"
+
+	"github.com/matrix-org/naffka/types"
 )
 
 // A MemoryDatabase stores the message history as arrays in memory.
@@ -17,10 +19,10 @@ type MemoryDatabase struct {
 
 type memoryDatabaseTopic struct {
 	messagesMutex sync.Mutex
-	messages      []Message
+	messages      []types.Message
 }
 
-func (t *memoryDatabaseTopic) addMessages(msgs []Message) error {
+func (t *memoryDatabaseTopic) addMessages(msgs []types.Message) error {
 	t.messagesMutex.Lock()
 	defer t.messagesMutex.Unlock()
 	if int64(len(t.messages)) != msgs[0].Offset {
@@ -37,7 +39,7 @@ func (t *memoryDatabaseTopic) addMessages(msgs []Message) error {
 // messages to.  It is safe to read the messages in the backing array since we
 // only append to the slice.  It is not safe to write or append to the returned
 // slice.
-func (t *memoryDatabaseTopic) getMessages() []Message {
+func (t *memoryDatabaseTopic) getMessages() []types.Message {
 	t.messagesMutex.Lock()
 	defer t.messagesMutex.Unlock()
 	return t.messages
@@ -58,12 +60,12 @@ func (m *MemoryDatabase) getTopic(topicName string) *memoryDatabaseTopic {
 }
 
 // StoreMessages implements Database
-func (m *MemoryDatabase) StoreMessages(topic string, messages []Message) error {
+func (m *MemoryDatabase) StoreMessages(topic string, messages []types.Message) error {
 	return m.getTopic(topic).addMessages(messages)
 }
 
 // FetchMessages implements Database
-func (m *MemoryDatabase) FetchMessages(topic string, startOffset, endOffset int64) ([]Message, error) {
+func (m *MemoryDatabase) FetchMessages(topic string, startOffset, endOffset int64) ([]types.Message, error) {
 	messages := m.getTopic(topic).getMessages()
 	if endOffset > int64(len(messages)) {
 		return nil, fmt.Errorf("end offset %d out of range %d", endOffset, len(messages))

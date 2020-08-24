@@ -7,6 +7,8 @@ import (
 	"time"
 
 	sarama "github.com/Shopify/sarama"
+	"github.com/matrix-org/naffka/storage"
+	"github.com/matrix-org/naffka/types"
 )
 
 // Naffka is an implementation of the sarama kafka API designed to run within a
@@ -15,13 +17,13 @@ import (
 // for kafka for testing or single instance deployment.
 // Does not support multiple partitions.
 type Naffka struct {
-	db          Database
+	db          storage.Database
 	topicsMutex sync.Mutex
 	topics      map[string]*topic
 }
 
 // New creates a new Naffka instance.
-func New(db Database) (*Naffka, error) {
+func New(db storage.Database) (*Naffka, error) {
 	n := &Naffka{db: db, topics: map[string]*topic{}}
 	maxOffsets, err := db.MaxOffsets()
 	if err != nil {
@@ -35,55 +37,6 @@ func New(db Database) (*Naffka, error) {
 		}
 	}
 	return n, nil
-}
-
-// A Message is used internally within naffka to store messages.
-// It is converted to a sarama.ConsumerMessage when exposed to the
-// public APIs to maintain API compatibility with sarama.
-type Message struct {
-	Offset    int64
-	Key       []byte
-	Value     []byte
-	Timestamp time.Time
-	Headers   []sarama.RecordHeader
-}
-
-func (m *Message) consumerMessage(topic string) *sarama.ConsumerMessage {
-	var headers []*sarama.RecordHeader
-	for i := range m.Headers {
-		headers = append(headers, &m.Headers[i])
-	}
-
-	return &sarama.ConsumerMessage{
-		Topic:     topic,
-		Offset:    m.Offset,
-		Key:       m.Key,
-		Value:     m.Value,
-		Timestamp: m.Timestamp,
-		Headers:   headers,
-	}
-}
-
-// A Database is used to store naffka messages.
-// Messages are stored so that new consumers can access the full message history.
-type Database interface {
-	// StoreMessages stores a list of messages.
-	// Every message offset must be unique within each topic.
-	// Messages must be stored monotonically and contiguously for each topic.
-	// So for a given topic the message with offset n+1 is stored after the
-	// the message with offset n.
-	StoreMessages(topic string, messages []Message) error
-	// FetchMessages fetches all messages with an offset greater than and
-	// including startOffset and less than but not including endOffset.
-	// The range of offsets requested must not overlap with those stored by a
-	// concurrent StoreMessages. The message offsets within the requested range
-	// are contigous. That is FetchMessage("foo", n, m) will only be called
-	// once the messages between n and m have been stored by StoreMessages.
-	// Every call must return at least one message. That is there must be at
-	// least one message between the start and offset.
-	FetchMessages(topic string, startOffset, endOffset int64) ([]Message, error)
-	// MaxOffsets returns the maximum offset for each topic.
-	MaxOffsets() (map[string]int64, error)
 }
 
 // SendMessage implements sarama.SyncProducer
@@ -270,7 +223,7 @@ func (c *partitionConsumer) catchup(fromOffset int64) {
 			// Pass the messages into the consumer channel.
 			// Blocking each write until the channel has enough space for the message.
 			for i := range msgs {
-				c.messages <- msgs[i].consumerMessage(c.topic.topicName)
+				c.messages <- msgs[i].ConsumerMessage(c.topic.topicName)
 			}
 			// Update our the offset for the next loop iteration.
 			fromOffset = msgs[len(msgs)-1].Offset + 1
@@ -299,7 +252,7 @@ func (c *partitionConsumer) notifyNewMessage(cmsg *sarama.ConsumerMessage) {
 }
 
 type topic struct {
-	db        Database
+	db        storage.Database
 	topicName string
 	mutex     sync.Mutex
 	consumers []*partitionConsumer
@@ -312,7 +265,7 @@ type topic struct {
 func (t *topic) send(now time.Time, pmsgs []*sarama.ProducerMessage) error {
 	var err error
 	// Encode the message keys and values.
-	msgs := make([]Message, len(pmsgs))
+	msgs := make([]types.Message, len(pmsgs))
 	for i := range msgs {
 		if pmsgs[i].Key != nil {
 			msgs[i].Key, err = pmsgs[i].Key.Encode()
@@ -349,7 +302,7 @@ func (t *topic) send(now time.Time, pmsgs []*sarama.ProducerMessage) error {
 
 	// Now notify the consumers about the messages.
 	for _, msg := range msgs {
-		cmsg := msg.consumerMessage(t.topicName)
+		cmsg := msg.ConsumerMessage(t.topicName)
 		for _, c := range t.consumers {
 			c.notifyNewMessage(cmsg)
 		}
