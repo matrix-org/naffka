@@ -5,14 +5,65 @@ import (
 	"testing"
 	"time"
 
+	"github.com/matrix-org/naffka/storage/sqlite3"
+
 	sarama "github.com/Shopify/sarama"
 )
 
-func TestSendAndReceive(t *testing.T) {
+func MustOpenSQLiteDatabase(t *testing.T) *Naffka {
+	db, err := sqlite3.NewDatabase("file::memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.DB.SetMaxOpenConns(1)
+	naffka, err := New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return naffka
+}
+
+func MustOpenInMemoryDatabase(t *testing.T) *Naffka {
 	naffka, err := New(&MemoryDatabase{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	return naffka
+}
+
+func TestSQLiteSendAndReceive(t *testing.T) {
+	testSendAndReceive(t, MustOpenSQLiteDatabase(t))
+}
+
+func TestSQLiteDelayedReceive(t *testing.T) {
+	testDelayedReceive(t, MustOpenSQLiteDatabase(t))
+}
+
+func TestSQLiteCatchup(t *testing.T) {
+	testCatchup(t, MustOpenSQLiteDatabase(t))
+}
+
+func TestSQLiteChannelSaturation(t *testing.T) {
+	testChannelSaturation(t, MustOpenSQLiteDatabase(t))
+}
+
+func TestInMemorySendAndReceive(t *testing.T) {
+	testSendAndReceive(t, MustOpenInMemoryDatabase(t))
+}
+
+func TestInMemoryDelayedReceive(t *testing.T) {
+	testDelayedReceive(t, MustOpenInMemoryDatabase(t))
+}
+
+func TestInMemoryCatchup(t *testing.T) {
+	testCatchup(t, MustOpenInMemoryDatabase(t))
+}
+
+func TestInMemoryChannelSaturation(t *testing.T) {
+	testChannelSaturation(t, MustOpenInMemoryDatabase(t))
+}
+
+func testSendAndReceive(t *testing.T, naffka *Naffka) {
 	producer := sarama.SyncProducer(naffka)
 	consumer := sarama.Consumer(naffka)
 	const topic = "testTopic"
@@ -50,11 +101,7 @@ func TestSendAndReceive(t *testing.T) {
 	}
 }
 
-func TestDelayedReceive(t *testing.T) {
-	naffka, err := New(&MemoryDatabase{})
-	if err != nil {
-		t.Fatal(err)
-	}
+func testDelayedReceive(t *testing.T, naffka *Naffka) {
 	producer := sarama.SyncProducer(naffka)
 	consumer := sarama.Consumer(naffka)
 	const topic = "testTopic"
@@ -65,7 +112,7 @@ func TestDelayedReceive(t *testing.T) {
 		Topic: topic,
 	}
 
-	if _, _, err = producer.SendMessage(&message); err != nil {
+	if _, _, err := producer.SendMessage(&message); err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,11 +133,7 @@ func TestDelayedReceive(t *testing.T) {
 	}
 }
 
-func TestCatchup(t *testing.T) {
-	naffka, err := New(&MemoryDatabase{})
-	if err != nil {
-		t.Fatal(err)
-	}
+func testCatchup(t *testing.T, naffka *Naffka) {
 	producer := sarama.SyncProducer(naffka)
 	consumer := sarama.Consumer(naffka)
 
@@ -102,7 +145,7 @@ func TestCatchup(t *testing.T) {
 		Topic: topic,
 	}
 
-	if _, _, err = producer.SendMessage(&message); err != nil {
+	if _, _, err := producer.SendMessage(&message); err != nil {
 		t.Fatal(err)
 	}
 
@@ -162,13 +205,8 @@ func TestCatchup(t *testing.T) {
 	}
 }
 
-func TestChannelSaturation(t *testing.T) {
+func testChannelSaturation(t *testing.T, naffka *Naffka) {
 	// The channel returned by c.Messages() has a fixed capacity
-
-	naffka, err := New(&MemoryDatabase{})
-	if err != nil {
-		t.Fatal(err)
-	}
 	producer := sarama.SyncProducer(naffka)
 	consumer := sarama.Consumer(naffka)
 	const topic = "testTopic"
