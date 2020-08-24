@@ -31,5 +31,6 @@ func NewDatabase(dsn string) (*Database, error) {
 		Writer:      d.writer,
 		TopicsTable: topics,
 	}
+	d.Database.CreateCache()
 	return &d, nil
 }
