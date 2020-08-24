@@ -32,7 +32,13 @@ func NewDatabase(dsn string) (Database, error) {
 	}
 	switch uri.Scheme {
 	case "file":
-		return sqlite3.NewDatabase(dsn)
+		if uri.Opaque != "" { // file:filename.db
+			return sqlite3.NewDatabase(uri.Opaque)
+		} else if uri.Path != "" { // file:///path/to/filename.db
+			return sqlite3.NewDatabase(uri.Path)
+		} else {
+			return nil, fmt.Errorf("unexpected file URI")
+		}
 	case "postgres":
 		fallthrough
 	case "postgresql":

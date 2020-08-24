@@ -3,8 +3,7 @@ package sqlutil
 import (
 	"database/sql"
 	"errors"
-
-	"go.uber.org/atomic"
+	"sync/atomic"
 )
 
 // ExclusiveWriter implements sqlutil.Writer.
@@ -12,7 +11,7 @@ import (
 // contend on database locks in, e.g. SQLite. Only one task will run
 // at a time on a given ExclusiveWriter.
 type ExclusiveWriter struct {
-	running atomic.Bool
+	running int32 // atomic
 	todo    chan transactionWriterTask
 }
 
@@ -39,7 +38,7 @@ func (w *ExclusiveWriter) Do(db *sql.DB, txn *sql.Tx, f func(txn *sql.Tx) error)
 	if w.todo == nil {
 		return errors.New("not initialised")
 	}
-	if !w.running.Load() {
+	if running := atomic.LoadInt32(&w.running); running == 0 {
 		go w.run()
 	}
 	task := transactionWriterTask{
@@ -57,10 +56,10 @@ func (w *ExclusiveWriter) Do(db *sql.DB, txn *sql.Tx, f func(txn *sql.Tx) error)
 // opened using the database object from the task and then this will
 // be passed as a parameter to the task function.
 func (w *ExclusiveWriter) run() {
-	if !w.running.CAS(false, true) {
+	if !atomic.CompareAndSwapInt32(&w.running, 0, 1) {
 		return
 	}
-	defer w.running.Store(false)
+	defer atomic.StoreInt32(&w.running, 0)
 	for task := range w.todo {
 		if task.db != nil && task.txn != nil {
 			task.wait <- task.f(task.txn)

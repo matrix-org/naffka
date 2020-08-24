@@ -5,14 +5,6 @@ import (
 	"fmt"
 )
 
-// A Transaction is something that can be committed or rolledback.
-type Transaction interface {
-	// Commit the transaction
-	Commit() error
-	// Rollback the transaction.
-	Rollback() error
-}
-
 // TxStmt wraps an SQL stmt inside an optional transaction.
 // If the transaction is nil then it returns the original statement that will
 // run outside of a transaction.
@@ -28,7 +20,7 @@ func TxStmt(transaction *sql.Tx, statement *sql.Stmt) *sql.Stmt {
 // If the transaction succeeded then it is committed, otherwise it is rolledback.
 // You MUST check the error returned from this function to be sure that the transaction
 // was applied correctly. For example, 'database is locked' errors in sqlite will happen here.
-func EndTransaction(txn Transaction, succeeded *bool) error {
+func EndTransaction(txn *sql.Tx, succeeded *bool) error {
 	if *succeeded {
 		return txn.Commit() // nolint: errcheck
 	} else {
