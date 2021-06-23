@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"net/url"
 
+	_ "github.com/matrix-org/go-sqlite3-js"
+
 	"github.com/matrix-org/naffka/storage/sqlite3"
 )
 
