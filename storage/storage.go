@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"net/url"
 
+	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/matrix-org/naffka/storage/postgres"
 	"github.com/matrix-org/naffka/storage/sqlite3"
 )

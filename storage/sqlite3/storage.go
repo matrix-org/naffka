@@ -3,8 +3,6 @@ package sqlite3
 import (
 	"database/sql"
 
-	_ "github.com/mattn/go-sqlite3"
-
 	"github.com/matrix-org/naffka/sqlutil"
 	"github.com/matrix-org/naffka/storage/shared"
 )
